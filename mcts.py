@@ -4,26 +4,32 @@ import time
 import math
 from math import sqrt
 
-
-class Node(object):
+def hashkey(board):
+    return hash(board.array.tostring())
+class SearchNode(object):
     
     # num_rollouts = 0
     # sqrtlog_num_rollouts = 0
     # temperature = 1
-    # transposition_table = {}
-    # reused=0
-    
+    transposition_table = {}
+    reused=0
+    #sqrtlogN = 0
     @classmethod
     def reset(cls):
-        cls.num_rollouts = 0
-        cls.sqrtlog_num_rollouts = 0
-        cls.temperature = .5
+        #cls.sqrtlogN =0
         cls.transposition_table = {}
         cls.reused=0
+    # @classmethod
+    # def reset(cls):
+    #     cls.num_rollouts = 0
+    #     cls.sqrtlog_num_rollouts = 0
+    #     cls.temperature = .5
+    #     cls.transposition_table = {}
+    #     cls.reused=0
         
-    __slots__ = ('move','children','unvisited','num_visits','num_wins','sqrtlogN')
-    def __init__(self,move): #move, number of visits, wins
-        self.move = move
+    __slots__ = ('moves','children','unvisited','num_visits','num_wins','sqrtlogN')
+    def __init__(self): #move, number of visits, wins
+        self.moves = []
         self.children = []
         self.unvisited = None
         self.num_visits = 0
@@ -31,7 +37,7 @@ class Node(object):
         self.sqrtlogN = 0
     
     @staticmethod
-    @jit(nopython=True)
+    @njit
     def rollout(board):
         while True:
             moves = board.get_moves()
@@ -45,13 +51,14 @@ class Node(object):
         #explore_bonus = Node.sqrtlog_num_rollouts/math.sqrt(self.num_visits)
         return win_rate# - explore_bonus
     
-    def best_child(self,final=False):
+    def best_child_id(self,final=False):
         # fix final
-        key = lambda child: self.ucb(child.num_wins,child.num_visits,self.sqrtlogN)
-        return max(self.children,key=key)
+        if final: key = lambda i: self.children[i].win_ratio()
+        else: key = lambda i: self.ucb(self.children[i].num_wins,self.children[i].num_visits,self.sqrtlogN)
+        return max(range(len(self.children)),key=key)
 
     @staticmethod
-    @jit(nopython=True)
+    @njit
     def ucb(num_wins,num_visits,sqrtlogN):
         win_rate = num_wins/num_visits
         explore_bonus = sqrtlogN/math.sqrt(num_visits)
@@ -59,7 +66,7 @@ class Node(object):
 
     def terminal_outcome(self,board):
         color = board.color_to_move()
-        won = board.move_won(self.move)
+        won = board.amove_won()
         if won: return won*color*(-1) # victory
         if board.is_draw(): return 0 # draw
         return None # Nothing
@@ -72,7 +79,8 @@ class Node(object):
             terminal_outcome = self.terminal_outcome(board)
             if terminal_outcome is not None: outcome = terminal_outcome
             else:
-                self.children = [Node(k) for k in board.get_moves()]
+                self.moves = board.get_moves()
+                self.children = [SearchNode() for m in self.moves]
                 self.unvisited = np.random.permutation(len(self.children))
                 outcome = self.rollout(board)
                 #Node.num_rollouts +=1
@@ -85,9 +93,9 @@ class Node(object):
             
         # Node has been fully expanded and we use the (ucb) policy    
         else:
-            child = self.best_child()
-            board.make_move(child.move)
-            outcome = child.update_path(board)
+            m = self.best_child_id()
+            board.make_move(self.moves[m])
+            outcome = self.children[m].update_path(board)
             
         self.update_statistics(color,outcome)
         return outcome
@@ -95,7 +103,7 @@ class Node(object):
     def update_statistics(self,color,outcome):
         self.num_visits +=1
         self.num_wins += 0.5*(1-color*outcome)
-        self.sqrtlogN = np.sqrt(np.log(self.num_visits))
+        self.sqrtlogN = np.sqrt(2*np.log(self.num_visits))
         
 
     def expand_unvisited(self,board):
@@ -104,31 +112,33 @@ class Node(object):
         m = self.unvisited[-1]
         self.unvisited = self.unvisited[:-1]
         child = self.children[m]
-        board.make_move(child.move)
-#         key = hashkey(board)
-#         if key in Node.transposition_table:
-#             Node.reused+=1
-#             self.children[m] = Node.transposition_table[key]
-#             child = self.children[m]
-#         else:
-#             Node.transposition_table[key]=child
+        move = self.moves[m]
+        board.make_move(move)
+        # key = hashkey(board)
+        # if key in SearchNode.transposition_table:
+        #     SearchNode.reused+=1
+        #     self.children[m] = SearchNode.transposition_table[key]
+        #     child = self.children[m]
+        # else:
+        #     SearchNode.transposition_table[key]=child
         return child
 
 class MCTS(object):
     def __init__(self,boardType):
         self.boardType = boardType
         self.gameBoard = boardType()
-        self.searchTree = Node(0)
-        self.interrupt=False
-        Node.reset()
+        self.searchTree = SearchNode()
+        # self.interrupt=False
+        # Node.reset()
         
-    def ponder(self,think_time=np.inf):
-        self.interrupt=False
+    def ponder(self,think_time):
         start_time = time.time()
         new_board = self.boardType()
-        while time.time() - start_time < think_time and not self.interrupt:
+        while time.time() - start_time < think_time:
             new_board.copy(self.gameBoard)
             self.searchTree.update_path(new_board)
+            #SearchNode.sqrtlogN = np.sqrt(2*np.log(self.searchTree.num_visits))
+            
     
     def compute_move(self,think_time):
 #         start_time = time.time()
@@ -137,23 +147,24 @@ class MCTS(object):
 #             new_board.copy(self.gameBoard)
 #             self.searchTree.update_path(new_board)
         self.ponder(think_time)
-        return self.searchTree.best_child(True).move
+        m = self.searchTree.best_child_id(True)
+        return self.searchTree.moves[m]
     
     def make_move(self,move):
         legal_moves = np.array(self.gameBoard.get_moves())
         assert move in legal_moves
         # find the associated child
-        i = np.nonzero(move==legal_moves)[0][0]
+        m = np.nonzero(move==legal_moves)[0][0]
         if self.searchTree.children:
-            child = self.searchTree.children[i]
+            child = self.searchTree.children[m]
         else:
-            child = Node(move)
+            child = SearchNode()
         # Update the search tree
         # Discard the tree and table for now
-        self.searchTree = child
-        Node.num_rollouts = self.searchTree.num_visits
-        #Node.reset()
+        self.searchTree = child#SearchNode()#child
+        #Node.num_rollouts = self.searchTree.num_visits
+        SearchNode.reset()
         #self.searchTree = Node(move)
-        outcome = self.gameBoard.make_move(self.searchTree.move)
+        outcome = self.gameBoard.make_move(move)
         return outcome
 
