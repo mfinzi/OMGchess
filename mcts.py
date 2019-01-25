@@ -5,7 +5,7 @@ import math
 from math import sqrt
 
 def hashkey(board):
-    return hash(board.array.tostring())
+    return (board.p1,board.p2)#hash(board.array.tostring())
 class SearchNode(object):
     
     # num_rollouts = 0
@@ -114,13 +114,13 @@ class SearchNode(object):
         child = self.children[m]
         move = self.moves[m]
         board.make_move(move)
-        # key = hashkey(board)
-        # if key in SearchNode.transposition_table:
-        #     SearchNode.reused+=1
-        #     self.children[m] = SearchNode.transposition_table[key]
-        #     child = self.children[m]
-        # else:
-        #     SearchNode.transposition_table[key]=child
+        key = hashkey(board)
+        if key in SearchNode.transposition_table:
+            SearchNode.reused+=1
+            self.children[m] = SearchNode.transposition_table[key]
+            child = self.children[m]
+        else:
+            SearchNode.transposition_table[key]=child
         return child
 
 class MCTS(object):
@@ -129,7 +129,7 @@ class MCTS(object):
         self.gameBoard = boardType()
         self.searchTree = SearchNode()
         # self.interrupt=False
-        # Node.reset()
+        SearchNode.reset()
         
     def ponder(self,think_time):
         start_time = time.time()
@@ -161,7 +161,7 @@ class MCTS(object):
             child = SearchNode()
         # Update the search tree
         # Discard the tree and table for now
-        self.searchTree = child#SearchNode()#child
+        self.searchTree = child
         #Node.num_rollouts = self.searchTree.num_visits
         SearchNode.reset()
         #self.searchTree = Node(move)

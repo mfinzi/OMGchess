@@ -90,9 +90,6 @@ class Connect4Board(object):
     def show(self):
         plt.imshow(self.data())
 
-def hashkey(board):
-    return hash(board.array.tostring())
-
 spec = [
     ('p1', int64),
     ('p2', int64),           
@@ -216,6 +213,7 @@ class Connect4Game(object):
         self.ppt.set_data(self.engine.gameBoard.data())
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
+        time.sleep(.1)
         #self.text_artist.set_text("{:1.2f}".format(self.engine.searchTree.win_ratio()))
         
             
