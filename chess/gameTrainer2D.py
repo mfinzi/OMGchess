@@ -21,9 +21,6 @@ class GameTrainer2D(Trainer):
         #logits = logits_img.view(logits_img.shape[0],-1)
         # Mask out illegal move options
         logits[illegal_moves] = -1e10
-        # print(logits.type())
-        # print(target_actions.type())
-        # print([a.type() for a in minibatch])
         # Check that size average and reduce match a0 paper
         CE = F.cross_entropy(logits,target_actions)
         MSE = ((values-target_values)**2).mean()#F.mse_loss(values,target_values)
@@ -32,8 +29,10 @@ class GameTrainer2D(Trainer):
     def logStuff(self,i,minibatch=None):
         step = i+1 + (self.epoch+1)*len(self.dataloaders['train'])
         metrics = {}
-        metrics['Train_Acc'],metrics['Train_MSE'] =\
-            self.evalAverageMetrics(self.dataloaders['train'],self._metrics)
+        for name,dloader in self.dataloaders.items():
+            if name=='train': continue
+            metrics[name+'_Acc'],metrics[name+'_MSE'] =\
+                self.evalAverageMetrics(dloader,self._metrics)
         self.logger.add_scalars('metrics', metrics, step)
         super().logStuff(i,minibatch)
 
@@ -73,26 +72,30 @@ def recursively_update(d, u):
             d[k] = v
     return d
 
+def makeSimpleTrainer(config):
+    cfg = {
+        'dataset': ChessDataset(os.path.expanduser('~/games/chess/chess_train50k_1.0s.pkl')),
+        'network':ChessResnet,'net_config': {'coords':False},
+        'bs': 128, 
+        'opt_constr':lambda params: torch.optim.SGD(params,**{'lr':.4, 'momentum':.9, 'weight_decay':1e-4}),
+        'num_epochs':100,'trainer_config':{},
+        }
+    cfg['lr_sched'] = cosLr(cfg['num_epochs'])
+    recursively_update(cfg,config)
+    trainset = cfg['dataset']
+    trainsubset = ChessDataset(os.path.expanduser('~/games/chess/chess_train1k_1.0s.pkl'))
+    testsubset= ChessDataset(os.path.expanduser('~/games/chess/chess_test1k_1.0s.pkl'))
+    device = torch.device('cuda')
+    fullCNN = torch.nn.Sequential(
+        cfg['network'](**cfg['net_config']).to(device)
+    )
+    dataloaders = {}
+    dataloaders['train'] = DataLoader(trainset,batch_size=cfg['bs'],shuffle=True)
+    dataloaders['train1k'] = DataLoader(trainsubset,batch_size=cfg['bs'],shuffle=False)
+    dataloaders['test1k'] = DataLoader(testsubset,batch_size=cfg['bs'],shuffle=False)
+    dataloaders = {k:LoaderTo(v,device) for k,v in dataloaders.items()}
+    #opt_constr = , **cfg['opt_config'])
+    return GameTrainer2D(fullCNN,dataloaders,cfg['opt_constr'],cfg['lr_sched'],**cfg['trainer_config'])
 
 def baseGameTrainTrial(strict=False):
-    def makeTrainer(config):
-        cfg = {
-            'dataset': ChessDataset,'network':ChessResnet,'net_config': {'coords':False},
-            'bs': 128, 
-            'opt_constr':lambda params: torch.optim.SGD(params,**{'lr':.4, 'momentum':.9, 'weight_decay':1e-4}),
-            'num_epochs':100,'trainer_config':{},
-            }
-        cfg['lr_sched'] = cosLr(cfg['num_epochs'])
-        recursively_update(cfg,config)
-        trainset = cfg['dataset'](os.path.expanduser('~/games/chess/chess_train.pkl'))
-        device = torch.device('cuda')
-        fullCNN = torch.nn.Sequential(
-            cfg['network'](**cfg['net_config']).to(device)
-        )
-        dataloaders = {}
-        dataloaders['train'] = DataLoader(trainset,batch_size=cfg['bs'],shuffle=True)
-        dataloaders['dev'] = DataLoader(trainset,batch_size=cfg['bs'],shuffle=False)
-        dataloaders = {k:LoaderTo(v,device) for k,v in dataloaders.items()}
-        #opt_constr = , **cfg['opt_config'])
-        return GameTrainer2D(fullCNN,dataloaders,cfg['opt_constr'],cfg['lr_sched'],**cfg['trainer_config'])
-    return train_trial(makeTrainer,strict)
+    return train_trial(makeSimpleTrainer,strict)
