@@ -23,7 +23,8 @@ class ChessPolicyHead(nn.Module):
             conv2d(in_channels,inter_channels,kernel_size=1,coords=coords),
             nn.BatchNorm2d(inter_channels),
             nn.ReLU(),
-            conv2d(inter_channels,64,kernel_size=1,coords=coords))
+            conv2d(inter_channels,64,kernel_size=1,coords=coords),
+            Expression(lambda u: u.view(u.shape[0],-1)))
     def forward(self,x):
         return self.net(x)
 
@@ -32,14 +33,14 @@ class ValueHead(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             ConvBNrelu(in_channels,fc_channels//64,kernel_size=1,coords=coords),
-            Expression(lambda u: u.view(-1,fc_channels)),
+            Expression(lambda u: u.view(u.size(0),fc_channels)),
             FcBNrelu(fc_channels,fc_channels//2),
             nn.Linear(fc_channels//2,1),
             nn.Tanh())
     def forward(self,x):
-        return self.net(x)
+        return self.net(x)[:,0]
 
-class simpleValueHead(nn.Module):
+class SimpleValueHead(nn.Module):
     def __init__(self,in_channels,coords=True):
         super().__init__()
         self.net = nn.Sequential(
@@ -49,7 +50,7 @@ class simpleValueHead(nn.Module):
             nn.Tanh())
 
     def forward(self,x):
-        return self.net(x)
+        return self.net(x)[:,0]
 
 class ChessResnet(nn.Module,metaclass=Named):
     """
@@ -62,7 +63,7 @@ class ChessResnet(nn.Module,metaclass=Named):
             *[ResBlock(k,k,coords=coords) for _ in range(num_blocks)],
         )
         self.policy = ChessPolicyHead(k,64,coords=coords)
-        self.value = simpleValueHead(k,coords=coords)
+        self.value = ValueHead(k,coords=coords)
 
     def forward(self,x):
         common = self.net(x)
