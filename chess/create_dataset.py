@@ -41,10 +41,11 @@ class flatLabeler(object):
                 self.engine.position(random_board)
                 evaluation = self.engine.go(movetime=self.evaltime)
                 bestmove = evaluation.bestmove.uci()
-                boardscore = self.handler.info["score"][1].cp
+                side = random_board.turn*2 -1 #1 for white, -1 for black
+                boardscore = self.handler.info["score"][1].cp*side
                 if boardscore is None:
-                    score = np.sign(self.handler.info['score'][1].mate)*20
-                else: score = self.handler.info["score"][1].cp
+                    score = np.sign(self.handler.info['score'][1].mate)*30*side
+                else: score = boardscore
                 out.extend([(board_fen,score,bestmove)])
             except Exception as e:
                 print(e)

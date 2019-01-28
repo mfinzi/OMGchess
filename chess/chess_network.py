@@ -45,6 +45,7 @@ class SimpleValueHead(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             ConvBNrelu(in_channels,in_channels,kernel_size=1,coords=coords),
+            ConvBNrelu(in_channels,in_channels,kernel_size=1,coords=coords),
             Expression(lambda u:u.mean(-1).mean(-1)),
             nn.Linear(in_channels,1),
             nn.Tanh())
@@ -63,7 +64,7 @@ class ChessResnet(nn.Module,metaclass=Named):
             *[ResBlock(k,k,coords=coords) for _ in range(num_blocks)],
         )
         self.policy = ChessPolicyHead(k,64,coords=coords)
-        self.value = ValueHead(k,coords=coords)
+        self.value = SimpleValueHead(k,coords=coords)
 
     def forward(self,x):
         common = self.net(x)
