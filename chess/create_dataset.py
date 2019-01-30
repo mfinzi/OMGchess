@@ -43,8 +43,8 @@ class flatLabeler(object):
                 evaluation = self.engine.go(movetime=self.evaltime)
                 bestmove = evaluation.bestmove.uci()
                 boardscore = self.handler.info["score"][1].cp
-                if boardscore is None:
-                    score = np.sign(self.handler.info['score'][1].mate)*30
+                if boardscore is None: # Todo increase score with closer mate
+                    score = np.sign(self.handler.info['score'][1].mate)*50
                 else: score = boardscore
                 if not random_board.turn:
                     score *= -1
@@ -96,7 +96,7 @@ if __name__=='__main__':
     parser.add_argument('--train_size', type=int, default=3000000,
                     help='Number of games to label')
     parser.add_argument('-t','--time',metavar='time(s)',type=float,default=.2)
-    parser.add_argument('--test_size', type=int,help='Size of the validation and test sets',default=1000)
+    parser.add_argument('--test_size', type=int,help='Size of the validation and test sets',default=10000)
     parser.add_argument('--positions',type=int,help='Positions to sample per game',default=10)
     parser.add_argument('--data_dir',type=str,help='Directory data will be saved to',default='data/')
     args = parser.parse_args()
@@ -123,7 +123,7 @@ if __name__=='__main__':
         dill.dump(out_test,file)
 
     print("Creating train_small set of size {}\n".format(args.test_size))
-    out_train_small = list(create_labeled_dataset(all_games.iloc[train_indices][:1000],ncores,args.time))[-1]
+    out_train_small = list(create_labeled_dataset(all_games.iloc[train_indices][:args.test_size],ncores,args.time))[-1]
     with open(args.data_dir+"chess_{}k_{}s_trainsmall.pkl".format(args.train_size//1000,args.time),'wb') as file:
         dill.dump(out_train_small,file)
     # Create Train set saving as we go
@@ -134,8 +134,9 @@ if __name__=='__main__':
     for j in tqdm(range(args.positions),desc='All Passes'):
         print("Currently on dataset pass {}\n".format(j+1))
         out_train = create_labeled_dataset(train_games,ncores,args.time,njobs)
-        with open(args.data_dir+"chess_{}k_{}s_train_{}.pkl".format(args.train_size//1000,args.time,j),'wb') as file:
-            for partial_train_set in out_train:
+        for partial_train_set in out_train:
+            with open(args.data_dir+"chess_{}k_{}s_train_{}.pkl".format(
+                                    args.train_size//1000,args.time,j),'wb') as file:
                 dill.dump(partial_train_set,file)
     
     

@@ -60,12 +60,18 @@ class ChessResnet(nn.Module,metaclass=Named):
     def __init__(self,num_blocks=40,k=128,coords=True):
         super().__init__()
         self.net = nn.Sequential(
-            conv2d(18,k,coords=coords),
+            conv2d(18+64+64,k,coords=coords),
             *[ResBlock(k,k,coords=coords) for _ in range(num_blocks)],
         )
         self.policy = ChessPolicyHead(k,64,coords=coords)
-        self.value = SimpleValueHead(k,coords=coords)
+        self.value = SimpleValueHead(k,coords=coords)#ValueHead(k,1024,coords=coords)#
 
-    def forward(self,x):
-        common = self.net(x)
-        return self.value(common),self.policy(common)
+    def forward(self,boards,legal_moves):
+        move_end_encoding = legal_moves.view(-1,64,8,8).float()
+        move_start_encoding = legal_moves.view(-1,64,64).permute(0,2,1).view(-1,64,8,8).float()
+        input_features = torch.cat([boards,move_end_encoding,move_start_encoding],dim=1)
+        common = self.net(input_features)
+        value = self.value(common)
+        logits = self.policy(common)
+        logits[~legal_moves] = -1e10
+        return value,logits
