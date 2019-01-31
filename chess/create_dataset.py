@@ -24,31 +24,48 @@ def sample_board(game):
             break
     return sampled_game.board()
 
+def sample_kfen_history(game,k=4):
+    num_moves = len([0 for _ in game.mainline()])
+    if num_moves <=1: raise StopIteration("Not enough moves in the pgn")
+    sampled_move_id = np.random.randint(num_moves-1)#exclude checkmates
+    start_board_fen = chess.Board().fen()
+    kmove_history = [start_board_fen]*k
+    for i,g in enumerate(game.mainline()):
+        if sampled_move_id -i <k:
+            sampled_fen = g.board().fen()
+            kmove_history = kmove_history[1:]+[sampled_fen]
+        if i==sampled_move_id:
+            break
+    return kmove_history
+
 class flatLabeler(object):
-    def __init__(self,evaltime=1e3):
+    def __init__(self,evaltime=1e3,k_history=4):
         self.handler = chess.uci.InfoHandler()
         self.engine = chess.uci.popen_engine(
             './stockfish-10-linux/Linux/stockfish_10_x64') 
         self.engine.info_handlers.append(self.handler)
         self.evaltime=evaltime
+        self.k_history = k_history
     def __call__(self,pgns):
         out = []
         for pgn in pgns:
             try:
                 game = chess.pgn.read_game(io.StringIO(pgn))
-                try: random_board = sample_board(game)
+                try: random_history = sample_kfen_history(game,self.k_history)
                 except StopIteration: continue
-                board_fen = random_board.fen()
+                random_board = chess.Board(random_history[-1])
                 self.engine.position(random_board)
                 evaluation = self.engine.go(movetime=self.evaltime)
                 bestmove = evaluation.bestmove.uci()
                 boardscore = self.handler.info["score"][1].cp
                 if boardscore is None: # Todo increase score with closer mate
-                    score = np.sign(self.handler.info['score'][1].mate)*50
+                    mate_info = self.handler.info['score'][1].mate
+                    sign,turns = np.sign(mate_info),np.abs(mate_info)
+                    score = sign*80*(1+1/(1+turns)**.5) # Encourages reducing the moves till mate
                 else: score = boardscore
                 if not random_board.turn:
                     score *= -1
-                out.extend([(board_fen,score,bestmove)])
+                out.extend([(random_history,score,bestmove)])
             except Exception as e:
                 print(e)
                 continue
@@ -106,11 +123,13 @@ if __name__=='__main__':
     print("Labeling {} game positions with stockfish using {}s per move and {} cores.".format(args.train_size,args.time,ncores))
     filename = os.path.join(args.data_dir,'all_with_filtered_anotations_since1998.txt')
     all_games = read_pgns_with_annotations(filename)['game']
+    # Create train/val/test split and save the data indices
     indices = np.random.permutation(len(all_games))[:args.train_size+2*args.test_size]
     train_indices = indices[:args.train_size]
     val_indices = indices[args.train_size:args.train_size+args.test_size]
     test_indices = indices[args.train_size+args.test_size:args.train_size+2*args.test_size]
-
+    with open(args.data_dir+"chess_{}k_{}s_indices.pkl".format(args.train_size//1000,args.time),'wb') as file:
+        dill.dump((train_indices,val_indices,test_indices),file)
     # Create Val and Test Sets
     print("Creating Validation set of size {}\n".format(args.test_size))
     out_val = list(create_labeled_dataset(all_games.iloc[val_indices],ncores,args.time))[-1]

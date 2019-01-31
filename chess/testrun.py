@@ -7,24 +7,26 @@ from oil.tuning.configGenerator import uniform,logUniform,sample_config
 from oil.utils.utils import LoaderTo, cosLr, recursively_update
 from oil.tuning.study import train_trial
 from chess_dataset import ChessDataset
-from chess_network import ChessResnet
+from chess_network import ChessResnet,ChessDensenet
 from torch.utils.data import DataLoader
 #import oil.augLayers as augLayers
 
 from gameTrainer2D import GameTrainer2D, baseGameTrainTrial
 
-logdir = os.path.expanduser('~/games/chess/runs/adamtest')
+logdir = os.path.expanduser('~/games/chess/runs/dense')
 adam_config = {
-    'trainer_config':{'log_suffix':'adam/'},
+    #'trainer_config':{'log_suffix':'adam/'},
     'optimizer':torch.optim.Adam,
     'opt_config':{'lr':2e-3},
     'num_epochs':8,
+    'network':ChessDensenet,'net_config': {'M':5,'N':20,'k':20,'drop_rate':0,'coords':True},
 }
 sgd_config = {
     'trainer_config':{'log_suffix':'sgd/'},
     'optimizer':torch.optim.SGD,
-    'opt_config':{'lr':.1,'momentum':.9,'weight_decay':2e-6,'nesterov':True},
+    'opt_config':{'lr':.2,'momentum':.9,'weight_decay':2e-6,'nesterov':True},
     'num_epochs':8,
+    'trainer_config':{'value_weight':1}
 }
 
 def makeTrainer(config):
@@ -32,9 +34,8 @@ def makeTrainer(config):
         'dataset': 'chess_3000k_0.2s',
         'datadir': os.path.expanduser('~/games/chess/data/'),
         'bs': 128,
-        'network':ChessResnet,'net_config': {'coords':True,'num_blocks':20,'k':128},
         'trainer_config':{'log_dir':logdir,'value_weight':2.5}
-        }
+        }#'network':ChessResnet,'net_config': {'coords':True,'num_blocks':20,'k':128},
     cfg = recursively_update(cfg,config)
     lr_sched = cosLr()
     trainset = ChessDataset(cfg['datadir']+cfg['dataset']+'_train_0.pkl')
@@ -44,7 +45,7 @@ def makeTrainer(config):
     fullCNN = cfg['network'](**cfg['net_config']).to(device)
     dataloaders = {}
     dataloaders['train'] = DataLoader(trainset,batch_size=cfg['bs'],
-                            shuffle=True,drop_last=True,pin_memory=True,num_workers=4)
+                            shuffle=True,drop_last=True,pin_memory=True,num_workers=2)
     dataloaders['train_'] = DataLoader(train_small,batch_size=cfg['bs'],shuffle=False)
     dataloaders['val'] = DataLoader(val,batch_size=cfg['bs'],shuffle=False)
     dataloaders = {k:LoaderTo(v,device) for k,v in dataloaders.items()}
@@ -53,4 +54,54 @@ def makeTrainer(config):
 
 Trial = train_trial(makeTrainer,strict=True)
 Trial(adam_config)
-Trial(sgd_config)
+#Trial(sgd_config)
+
+# Completed Improvements:
+# Coordinate convolutions in all layers (unknown)
+# Feed legal moves as input to the network (major boost)
+# Use both start and end legal move encodings for input (small improvement?)
+# No Improvement: remove tanh on value network, train on cp value directly (weights too much on extreme states?)
+# Minor to no Improvement: Add opponent move encoding to input features (yields worse or similar accs?)
+
+# TODO: Test again with higher learning rates
+# Why does Adam work better?
+
+# TODO: Replace resnet backbone with a densenet  (in progress, helps but more so with value function)
+# TODO: Implement dual head policy network
+# TODO: Add in a FiLM layer using (to_move,num_moves,castling rights features)
+# TODO: Encode partial move history into the input tensors (previous boards)
+
+
+# TODO: Get SWA setup and working
+# TODO: Yarin Gal's multitask uncertainty loss for balancing policy & value
+
+# TODO: Some form of dropout? (unnecessary, no overfitting happening yet)
+# TODO: Weight sharing with repeating layers (aka RNN) for planning (investigate CTC)
+# TODO: Add (flip board, swap white for black pieces and tomove, negate cp) data aug (only 1.6x data though?)
+
+
+
+# TODO: Primitive elo evaluation
+# TODO: Measure speed of inference as function of batch size
+# TODO: Move to lower precision inference (16 bits)
+
+# Asynchronous MCTS
+# Base cython implementation
+# + Multithreading (GPU queue)
+# + Transposition table (get zobrist keys)
+# + Opening Book
+# + Endgame database
+
+# Visualizations
+# Graph of acc,mse value pairs vs elo
+# Table of improvements, e.g. + dual-head: + 1.5 acc, -.5 mse, +200 elo
+# Detailed plot of elo vs temperature
+# Visualization of the search tree: histogram for branch depth
+# Graph of performence vs size of dataset 10^5 -> 10^8
+
+# Extensions
+# Static elo evaluation task:
+# Use trained network & train from scratch
+# Try to predict elos of black and white players
+# Alternative approach with interactive agent
+# CPNS feature visualization

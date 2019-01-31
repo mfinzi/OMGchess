@@ -6,7 +6,7 @@ import torch.nn as nn
 import numpy as np
 from torch.nn.utils import weight_norm
 from oil.utils.utils import Expression,export,Named
-from oil.architectures.parts import conv2d,ConvBNrelu,FcBNrelu,ResBlock
+from oil.architectures.parts import conv2d,ConvBNrelu,FcBNrelu,ResBlock,DenseBlock
 
 
 
@@ -36,7 +36,7 @@ class ValueHead(nn.Module):
             Expression(lambda u: u.view(u.size(0),fc_channels)),
             FcBNrelu(fc_channels,fc_channels//2),
             nn.Linear(fc_channels//2,1),
-            nn.Tanh())
+            )#nn.Tanh())
     def forward(self,x):
         return self.net(x)[:,0]
 
@@ -48,30 +48,52 @@ class SimpleValueHead(nn.Module):
             ConvBNrelu(in_channels,in_channels,kernel_size=1,coords=coords),
             Expression(lambda u:u.mean(-1).mean(-1)),
             nn.Linear(in_channels,1),
-            nn.Tanh())
+            )#nn.Tanh())
 
     def forward(self,x):
         return self.net(x)[:,0]
 
-class ChessResnet(nn.Module,metaclass=Named):
-    """
-    Very small CNN
-    """
-    def __init__(self,num_blocks=40,k=128,coords=True):
-        super().__init__()
-        self.net = nn.Sequential(
-            conv2d(18+64+64,k,coords=coords),
-            *[ResBlock(k,k,coords=coords) for _ in range(num_blocks)],
-        )
-        self.policy = ChessPolicyHead(k,64,coords=coords)
-        self.value = SimpleValueHead(k,coords=coords)#ValueHead(k,1024,coords=coords)#
 
-    def forward(self,boards,legal_moves):
+class ChessNetwork(nn.Module,metaclass=Named):
+    def forward(self,boards,legal_moves,opponent_legal_moves):
         move_end_encoding = legal_moves.view(-1,64,8,8).float()
         move_start_encoding = legal_moves.view(-1,64,64).permute(0,2,1).view(-1,64,8,8).float()
-        input_features = torch.cat([boards,move_end_encoding,move_start_encoding],dim=1)
+        opp_end_encoding = opponent_legal_moves.view(-1,64,8,8).float()
+        opp_start_encoding = opponent_legal_moves.view(-1,64,64).permute(0,2,1).view(-1,64,8,8).float()
+        input_features = torch.cat([boards,move_end_encoding,move_start_encoding,\
+                                    opp_end_encoding,opp_start_encoding],dim=1)
         common = self.net(input_features)
         value = self.value(common)
         logits = self.policy(common)
         logits[~legal_moves] = -1e10
         return value,logits
+
+class ChessResnet(ChessNetwork):
+    def __init__(self,num_blocks=40,k=128,coords=True):
+        super().__init__()
+        self.net = nn.Sequential(
+            conv2d(18+64*4,k,coords=coords),
+            *[ResBlock(k,k,coords=coords) for _ in range(num_blocks)],
+        )
+        self.policy = ChessPolicyHead(k,64,coords=coords)
+        self.value = SimpleValueHead(k,coords=coords)#ValueHead(k,1024,coords=coords)#
+        print("{}M Parameters".format(sum(p.numel() for p in self.net.parameters() if p.requires_grad)/10**6))
+
+
+class ChessDensenet(ChessNetwork):
+    def __init__(self,M=5,N=15,k=24,drop_rate=0,coords=True):
+        super().__init__()
+        dense_layers = []
+        inplanes = 192
+        for i in range(M):
+            dense_layers.append(DenseBlock(inplanes,k,N,drop_rate,coords))
+            inplanes = (inplanes + N*k)//2
+
+        self.net = nn.Sequential(
+            conv2d(18+64*4,192,coords=coords),
+            *dense_layers,
+        )
+        self.policy = ChessPolicyHead(inplanes,64,coords=coords)
+        self.value = SimpleValueHead(inplanes,coords=coords)#ValueHead(k,1024,coords=coords)#
+        print("{}M Parameters".format(sum(p.numel() for p in self.net.parameters() if p.requires_grad)/10**6))
+

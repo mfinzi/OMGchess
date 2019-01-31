@@ -34,6 +34,11 @@ def legal_moves(fen_string):
     board = chess.Board(fen_string)
     return legal_board_moves(board)
 
+def legal_opponent_moves(fen_string):
+    board = chess.Board(fen_string)
+    board.turn = not board.turn
+    return legal_board_moves(board)
+
 def legal_board_moves(board):
     # Currently encoded by end location as 8x8
     legal_ids = [move2class(move.uci()) for move in board.legal_moves]
@@ -71,8 +76,8 @@ class ChessDataset(Dataset,metaclass=Named):
     def __getitem__(self,index):
         fen, score, move = self.pgns[index]
         # board_tensor, illegal_move_list, value, class_index
-        return fen2tensor(fen), legal_moves(fen),\
-               cp2value(score), move2class(move)
+        return fen2tensor(fen), legal_moves(fen), legal_opponent_moves(fen), \
+               self.cp2value(score), move2class(move)
 
     def __len__(self):
         return len(self.pgns)
