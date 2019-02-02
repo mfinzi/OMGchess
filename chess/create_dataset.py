@@ -112,7 +112,7 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser("Create chess dataset from annotated pgns")
     parser.add_argument('--train_size', type=int, default=3000000,
                     help='Number of games to label')
-    parser.add_argument('-t','--time',metavar='time(s)',type=float,default=.2)
+    parser.add_argument('-t','--time',metavar='time(s)',type=float,default=.1)
     parser.add_argument('--test_size', type=int,help='Size of the validation and test sets',default=10000)
     parser.add_argument('--positions',type=int,help='Positions to sample per game',default=10)
     parser.add_argument('--data_dir',type=str,help='Directory data will be saved to',default='data/')
@@ -147,7 +147,7 @@ if __name__=='__main__':
         dill.dump(out_train_small,file)
     # Create Train set saving as we go
     print("Creating train set of size {}\n".format(args.train_size))
-    njobs = int(np.ceil(args.train_size*(args.time/2000))) # Give each process 30 minutes of work
+    njobs = int(np.ceil(args.train_size*(args.time/20000))) # Give each process 300 minutes of work
     train_games = all_games.iloc[train_indices]
     
     for j in tqdm(range(args.positions),desc='All Passes'):

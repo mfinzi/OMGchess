@@ -9,6 +9,8 @@ from oil.utils.utils import Named
 import tempfile
 import atexit,os
 import numpy as np
+import torch
+import copy
 
 class ChessBoard(chess.Board):
     #reset
@@ -48,6 +50,7 @@ class ChessBoard(chess.Board):
 
 class Agent(object):
     def __init__(self,GameType):
+        self.GameType = GameType
         self.board = GameType()
     def reset(self):
         # Will need to reset time controls here too
@@ -65,12 +68,21 @@ class NNAgent(Agent):
     def __init__(self,GameType,network):
         super().__init__(GameType)
         self.network = network
-        
+        self.reset()
+    def reset(self):
+        self.board_history = [self.GameType()]*4
+        self.board = self.board_history[-1]
+    def make_action(self,move):
+        new_board = copy.copy(self.board_history[-1])
+        new_board.make_move(move)
+        self.board_history = self.board_history[1:]+ [new_board]
+        self.board = new_board
     def compute_action(self):
-        nn_board = self.board.nn_encode_board().unsqueeze(0).cuda()
+        nn_boards = torch.cat([board.nn_encode_board().unsqueeze(0).cuda() \
+                                for board in self.board_history],dim=1)
         nn_legal_mvs = self.board.nn_legal_moves().unsqueeze(0).cuda()
-        #nn_opp_mvs = self.board.nn_opp_moves().unsqueeze(0).cuda()
-        values,logits = self.network(nn_board,nn_legal_mvs)#,nn_opp_mvs)
+        nn_opp_mvs = self.board.nn_opp_moves().unsqueeze(0).cuda()
+        values,logits = self.network(nn_boards,nn_legal_mvs,nn_opp_mvs)
         chosen_classid = logits.max(1)[1].squeeze().cpu().numpy()
         move = self.board.nn_decode_move(chosen_classid)
         return move
@@ -114,15 +126,14 @@ class ChessGame(object):
         i=0
         self.agent1.reset()
         self.agent2.reset()
-        board = self.agent1.board
-        while not board.is_game_over():
-            if self.display: display(board)
+        while not self.agent1.board.is_game_over():
+            if self.display: display(self.agent1.board)
             player_up = [self.agent1,self.agent2][i%2]
             move = player_up.compute_action()
             self.agent1.make_action(move)
             self.agent2.make_action(move)
             i+=1
-        return board # return game outcome
+        return self.agent1.board # return game outcome
 
 def getRelativeScore(agent1,agent2,num_games=30):
     """ Returns the mean score for agent1 and its standard dev"""

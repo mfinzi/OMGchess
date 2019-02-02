@@ -76,7 +76,7 @@ class ChessDataset(Dataset,metaclass=Named):
     def __getitem__(self,index):
         fen, score, move = self.pgns[index]
         # board_tensor, illegal_move_list, value, class_index
-        return fen2tensor(fen), legal_moves(fen), legal_opponent_moves(fen), \
+        return fen2tensor(fen), legal_moves(fen), \
                self.cp2value(score), move2class(move)
 
     def __len__(self):
@@ -89,3 +89,11 @@ class ChessDataset(Dataset,metaclass=Named):
     @staticmethod
     def value2cp(value):
         return 290.68*np.tan(value*1.56)
+
+class ChessDatasetWOpp(ChessDataset):
+
+    def __getitem__(self,index):
+        fens, score, move = self.pgns[index]
+        # board_tensor, illegal_move_list, value, class_index
+        return torch.cat([fen2tensor(fen) for fen in fens],dim=0), legal_moves(fens[-1]),\
+            legal_opponent_moves(fens[-1]), self.cp2value(score), move2class(move)
