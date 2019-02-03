@@ -1,27 +1,65 @@
 from agent import ChessBoard, Agent, NNAgent
-
+import threading
 from queue import Queue
+from torch.utils.data.dataloader import default_collate
+import torch
+import torch.nn.functional as F
+import numpy as np
+from concurrent import futures
+import time
+import copy
+# class QueingNNworker(threading.Thread):
+#     # batched_nn_executor holds a queue
+#     # when the queue is of length (batchsize) then the network
+#     # evaluates
+#     # may need its own thread (a daemon thread?)
+#     def __init__(self,network,*args,**kwargs):
+#         self.network = network
+#         self.queue = queue.Queue()
+#         self.outputTable = {}
+#         super().__init__(*args,**kwargs)
 
-class batched_nn_executor(object):
+#     def run(self):
+#         while True:
+#             try: board = self.queue.get(timeout=1)
+#         values,moveProbs = self.network.infer(minibatch)
+#         # split values and moveProbs across the batch
+#         # filter out move probs below epsilon?
+#     def enqueue(self,board):
+#         self.outputTable[board] = None
+#         self.queue.put(board)
+
+class NNevalQueue(Queue):
     # batched_nn_executor holds a queue
     # when the queue is of length (batchsize) then the network
     # evaluates
     # may need its own thread (a daemon thread?)
-    def __init__(self,network):
-        ...
-        controlled = False
-    def do_work_(self):
-        values,moveProbs = self.network.infer(minibatch)
-        # split values and moveProbs across the batch
-        # filter out move probs below epsilon?
-    def submit(self,board):
-        self.q.put(..)
-        if not controlled:
-            controlled = True:
-            while len(self.q) < 12:
-                wait
-                time.sleep(1e-6)
-        if controlled:
+    def __init__(self,network,batch_size=16):
+        super().__init__()
+        self.network = network
+        self.outputTable = {}
+        self.batch_size = batch_size
+        self.start_worker()
+        self.worker = threading.Thread(target=self.work)
+        self.worker.daemon = True
+        self.worker.start()
+
+    def enqueue(self,board):
+        self.outputTable[board] = None
+        self.put(board)
+
+    def work(self):
+        mb_boards = []
+        while True:
+            if len(mb_boards)<=self.batch_size:
+                mb_boards.append(self.get(timeout=1))
+            else:
+                encoded_mb = [self.network.encode(board) for board in mb_boards]
+                collated_mb = default_collate(encoded_mb)
+                values,logits = self.network(collated_mb)
+                moveProbs = F.softmax(logits,dim=1)
+                for board, val, moveProb in zip(mb_boards,values,moveProbs):
+                    self.outputTable[board] = (val,moveProb)
             
             
         
@@ -38,12 +76,17 @@ class SearchNode(object):
         self.children = [None]*len(self.mv_ids)
 
     @staticmethod #@lru_cache
-    def newchild_and_value(board,transposition_table):
+    def newchild_and_value(board,transposition_table,eval_queue):
         # TODO: Check if board is in transposition table
         # if so return the cached results
         # output = transposition_table.get(board,None)
         # if output is None:
-        value_abs, moveProbs = batched_NN_executor.submit(board)
+        eval_queue.enqueue(board)
+        while eval_queue.outputTable[board] is None:
+            time.sleep(.0001)
+
+        value_abs, moveProbs = eval_queue.table.pop(board)
+
         child = SearchNode(moveProbs)
         color = board.turn*2 - 1 # -1 or 1
         value_rel = value_abs*color
@@ -51,7 +94,7 @@ class SearchNode(object):
         #transposition_table[board] = output
         return output
 
-    def update_path(self,board,table):
+    def update_path(self,board,table,eval_queue):
         i = self.select()
         # The virtual loss to prevent unwanted thread interaction
         # increments the visit counts before the value is propagated
@@ -60,7 +103,7 @@ class SearchNode(object):
         board.make_action(board.nn_decode_move(mv_id))
         child = self.children[i]
         if child is None:
-            self.children[i], value = self.newchild_and_value(board,table)
+            self.children[i], value = self.newchild_and_value(board,table,eval_queue)
         else:
             value = child.update_path(board,table)
         self.Vs[i] += value
@@ -76,18 +119,22 @@ class SearchNode(object):
         return mv_index
 
 
-class MCTSAgent(NNAgent):
-    def __init__(self,movetime=1,bs=64,num_threads=1):
+class MCTSAgent(Agent):
+    def __init__(self,GameType,network,movetime=1,bs=64,num_threads=1):
+        super().__init__(GameType)
         self.movetime=movetime
-        self.searchTree = SearchNode.newchild_and_value(board)
-        self.transposition_table = {}
+        self.trans_table = {}
+        network.eval()
+        self.eval_queue = NNevalQueue(network,batch_size=16)
+        self.searchTree,_ = SearchNode.newchild_and_value(
+                            self.board,self.trans_table,self.eval_queue)
     # def set_game_state(self,state):
     #     self.searchTree = SearchNode()
     # def make_action(self,move):
     #     pass
     def run_simulation(self,board):
         simulation_board = copy.copy(board)
-        self.searchTree.update_path(simulation_board,self.transposition_table)
+        self.searchTree.update_path(simulation_board,self.transposition_table,self.eval_queue)
 
     def compute_action(self,move):
         start_time =time.time()
@@ -99,5 +146,6 @@ class MCTSAgent(NNAgent):
                 for future in done:
                     active_simulations.remove(future)
                     active_simulations.add(exc.submit(self.run_simulation))
+            futures.wait(active_simulations)
         mv_id = self.searchTree.mv_ids[np.argmax(self.searchTree.Ns)]
         return self.board.nn_decode_move(mv_id)
