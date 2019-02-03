@@ -20,6 +20,8 @@ class ChessBoard(chess.Board):
         self.set_fen(fen)
     def nn_encode_board(self):
         return fen2tensor(self.fen())
+    # Add function using board.pop
+    # to give the full input encoding: board,legal_moves, opp_legal_moves
     def nn_legal_moves(self):
         return legal_board_moves(self)
     def nn_opp_moves(self):
@@ -77,6 +79,7 @@ class NNAgent(Agent):
         new_board.make_move(move)
         self.board_history = self.board_history[1:]+ [new_board]
         self.board = new_board
+
     def compute_action(self):
         nn_boards = torch.cat([board.nn_encode_board().unsqueeze(0).cuda() \
                                 for board in self.board_history],dim=1)

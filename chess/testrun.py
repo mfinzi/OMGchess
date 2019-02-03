@@ -13,13 +13,13 @@ from torch.utils.data import DataLoader
 
 from gameTrainer2D import GameTrainer2D, baseGameTrainTrial
 
-logdir = os.path.expanduser('~/games/chess/runs/drop')
+logdir = os.path.expanduser('~/games/chess/runs/drop2')
 adam_config = {
     #'trainer_config':{'log_suffix':'adam/'},
     'optimizer':torch.optim.Adam,
     'opt_config':{'lr':2e-3},
     'num_epochs':8,
-    'network':ChessResnet,'net_config': {'coords':True,'num_blocks':20,'k':128,'drop_rate':.1},
+    'network':ChessResnet,'net_config': {'coords':True,'num_blocks':20,'k':128,'drop_rate':.3},
     #'network':ChessDensenet,'net_config': {'M':5,'N':20,'k':20,'drop_rate':0,'coords':True},
 }
 sgd_config = {

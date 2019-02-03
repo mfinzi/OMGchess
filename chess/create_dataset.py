@@ -147,7 +147,7 @@ if __name__=='__main__':
         dill.dump(out_train_small,file)
     # Create Train set saving as we go
     print("Creating train set of size {}\n".format(args.train_size))
-    njobs = int(np.ceil(args.train_size*(args.time/20000))) # Give each process 300 minutes of work
+    njobs = int(np.ceil(args.train_size*(args.time/10000))) # Give each process 300 minutes of work
     train_games = all_games.iloc[train_indices]
     
     for j in tqdm(range(args.positions),desc='All Passes'):

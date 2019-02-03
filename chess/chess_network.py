@@ -73,7 +73,7 @@ class SimpleValueHead(nn.Module):
 
 
 class ChessNetwork(nn.Module,metaclass=Named):
-    def forward(self,boards,legal_moves):
+    def forward(self,boards,legal_moves): #switch from individual tensors here to one tuple=> encoded input
         move_end_encoding = legal_moves.view(-1,64,8,8).float()
         move_start_encoding = legal_moves.view(-1,64,64).permute(0,2,1).view(-1,64,8,8).float()
         input_features = torch.cat([boards,move_end_encoding,move_start_encoding],dim=1)
