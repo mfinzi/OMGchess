@@ -7,8 +7,8 @@ import numpy as np
 from torch.nn.utils import weight_norm
 from oil.utils.utils import Expression,export,Named
 from oil.architectures.parts import conv2d,ConvBNrelu,FcBNrelu,ResBlock,DenseBlock
-
-
+from chess_dataset import fen2tensor,legal_board_moves,move2class,class2move,legal_opponent_moves
+import copy
 
 
 
@@ -74,21 +74,22 @@ class SimpleValueHead(nn.Module):
 
 class ChessNetwork(nn.Module,metaclass=Named):
     k = 4 # The number of boards in the history to be included
-    @staticmethod
-    def encode(board):
+    @classmethod
+    def encode(cls,board):
         """ Encodes a single chess board into a k move history
             and generates the legal moves and opponent moves.
             Method will destroy the original board."""
-        legal_moves = legal_board_moves(board)
+        board = copy.deepcopy(board)
+        legal_moves = legal_board_moves(board).cuda()
         board.turn = not board.turn
-        legal_opponent_moves = legal_board_moves(board)
+        legal_opponent_moves = legal_board_moves(board).cuda()
         board.turn = not board.turn
 
-        nn_boards = [board.start_tensor]*self.k
-        for i in range(min(len(board.move_stack),self.k)):
+        nn_boards = [board.start_tensor]*cls.k
+        for i in range(min(len(board.move_stack),cls.k)):
             board.pop()
-            nn_boards[self.k-i-1] = fen2tensor(board)
-        nn_boards = torch.cat(nn_features,dim=0) # no batch dim yet
+            nn_boards[cls.k-i-1] = fen2tensor(board.fen())
+        nn_boards = torch.cat(nn_boards,dim=0).cuda() # no batch dim yet
         # For now the legal moves and opponent moves are left separate
         return nn_boards,legal_moves,legal_opponent_moves
 

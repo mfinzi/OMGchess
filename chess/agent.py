@@ -3,6 +3,7 @@ import chess
 import chess.svg
 import chess.engine
 import chess.pgn
+import chess.polyglot
 from chess_dataset import fen2tensor,legal_board_moves,move2class,class2move,legal_opponent_moves
 from IPython.display import display
 from oil.utils.utils import Named
@@ -32,13 +33,14 @@ class ChessBoard(chess.Board):
         self.turn = not self.turn
         return opp_moves
     def nn_decode_move(self,classid):
-        #TODO: handle promotions
         movestr = class2move(classid)
         m = chess.Move.from_uci(movestr)
         if chess.square_rank(m.to_square) in (0,7) and \
             (self.piece_at(m.from_square).symbol() in ('P','p')):
             movestr += 'q' # Queen promotions only
         return movestr
+    def nn_encode_move(self,movestr):
+        return move2class(movestr)
     def make_move(self,uci_str):
         move = chess.Move.from_uci(uci_str)
         self.push(move)
@@ -51,6 +53,10 @@ class ChessBoard(chess.Board):
         raise NotImplementedError
     def as_svg(self):
         return chess.svg.board(self)
+    def __eq__(self,other):# a little bit suspect
+        return hash(self)==hash(other)
+    def __hash__(self):
+        return chess.polyglot.zobrist_hash(self)
 
 class Agent(object):
     def __init__(self,GameType):
@@ -72,22 +78,10 @@ class NNAgent(Agent):
     def __init__(self,GameType,network):
         super().__init__(GameType)
         self.network = network
-        self.reset()
-    def reset(self):
-        self.board_history = [self.GameType()]*4
-        self.board = self.board_history[-1]
-    def make_action(self,move):
-        new_board = copy.copy(self.board_history[-1])
-        new_board.make_move(move)
-        self.board_history = self.board_history[1:]+ [new_board]
-        self.board = new_board
 
     def compute_action(self):
-        nn_boards = torch.cat([board.nn_encode_board().unsqueeze(0).cuda() \
-                                for board in self.board_history],dim=1)
-        nn_legal_mvs = self.board.nn_legal_moves().unsqueeze(0).cuda()
-        nn_opp_mvs = self.board.nn_opp_moves().unsqueeze(0).cuda()
-        values,logits = self.network(nn_boards,nn_legal_mvs,nn_opp_mvs)
+        inputs = self.network.encode(copy.copy(self.board))
+        values,logits = self.network(*[inp.unsqueeze(0) for inp in inputs])
         chosen_classid = logits.max(1)[1].squeeze().cpu().numpy()
         move = self.board.nn_decode_move(chosen_classid)
         return move
