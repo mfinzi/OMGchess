@@ -73,6 +73,29 @@ class SimpleValueHead(nn.Module):
 
 
 class ChessNetwork(nn.Module,metaclass=Named):
+    k = 4 # The number of boards in the history to be included
+    @staticmethod
+    def encode(board):
+        """ Encodes a single chess board into a k move history
+            and generates the legal moves and opponent moves.
+            Method will destroy the original board."""
+        legal_moves = legal_board_moves(board)
+        board.turn = not board.turn
+        legal_opponent_moves = legal_board_moves(board)
+        board.turn = not board.turn
+
+        nn_boards = [board.start_tensor]*self.k
+        for i in range(min(len(board.move_stack),self.k)):
+            board.pop()
+            nn_boards[self.k-i-1] = fen2tensor(board)
+        nn_boards = torch.cat(nn_features,dim=0) # no batch dim yet
+        # For now the legal moves and opponent moves are left separate
+        return nn_boards,legal_moves,legal_opponent_moves
+
+    def predict(self,x):
+        values,logits = self(x)
+        return values, F.softmax(logits,dim=1)
+        
     def forward(self,boards,legal_moves): #switch from individual tensors here to one tuple=> encoded input
         move_end_encoding = legal_moves.view(-1,64,8,8).float()
         move_start_encoding = legal_moves.view(-1,64,64).permute(0,2,1).view(-1,64,8,8).float()
@@ -94,7 +117,7 @@ class ChessResnet(ChessNetworkWopp):
     def __init__(self,num_blocks=40,k=128,drop_rate=0,coords=True):
         super().__init__()
         self.net = nn.Sequential(
-            conv2d(18*4+64*4,k,coords=coords),
+            conv2d(18*self.k+64*4,k,coords=coords),
             *[ResBlock(k,k,drop_rate=drop_rate,coords=coords) for _ in range(num_blocks)],
         )
         self.policy = DualPolicyHead(k,64,coords=coords)

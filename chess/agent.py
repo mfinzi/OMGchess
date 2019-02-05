@@ -14,6 +14,8 @@ import copy
 
 class ChessBoard(chess.Board):
     #reset
+    start_fen = chess.Board().fen()
+    start_tensor = fen2tensor(start_fen)
     def state(self):
         return self.fen()
     def set_state(self,fen):

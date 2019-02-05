@@ -65,6 +65,7 @@ Trial(adam_config)
 # Minor to no Improvement: Add opponent move encoding to input features (yields worse or similar accs?)
 # Dual encoding policy network (+.7% acc)
 # Encode partial move history into the input tensors (+x% acc)
+# Dropout p=0.3: +.5% acc
 # Why does Adam work better?
 
 # TODO: Replace resnet backbone with a densenet  (in progress, helps but more so with value function)
@@ -72,13 +73,13 @@ Trial(adam_config)
 # TODO: Yarin Gal's multitask uncertainty loss for balancing policy & value
 # TODO: Add in a FiLM layer using (to_move,num_moves,castling rights features)
 
-# TODO: Some form of dropout? (unnecessary, no overfitting happening yet)
 # TODO: Weight sharing with repeating layers (aka RNN) for planning (investigate CTC)
 # TODO: Add (flip board, swap white for black pieces and tomove, negate cp) data aug (only 1.6x data though?)
 
 # TODO: Primitive elo evaluation
 # TODO: Measure speed of inference as function of batch size
 # TODO: Move to lower precision inference (16 bits)
+# TODO: Move to TensorRT with onnx
 
 # Asynchronous MCTS
 # Base cython implementation
