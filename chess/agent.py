@@ -17,6 +17,7 @@ class ChessBoard(chess.Board):
     #reset
     start_fen = chess.Board().fen()
     start_tensor = fen2tensor(start_fen)
+    scoring = {'0-1':-1,'1/2-1/2':0,'1-0':1}
     def state(self):
         return self.fen()
     def set_state(self,fen):
@@ -53,6 +54,11 @@ class ChessBoard(chess.Board):
         raise NotImplementedError
     def as_svg(self):
         return chess.svg.board(self)
+    def outcome(self):
+        absolute_score = self.scoring[self.result()]
+        if not self.turn: absolute_score*=-1
+        return absolute_score #Now the relative score
+
     def __eq__(self,other):# a little bit suspect
         return hash(self)==hash(other)
     def __hash__(self):

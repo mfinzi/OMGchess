@@ -8,26 +8,6 @@ import numpy as np
 from concurrent import futures
 import time
 import copy
-# class QueingNNworker(threading.Thread):
-#     # batched_nn_executor holds a queue
-#     # when the queue is of length (batchsize) then the network
-#     # evaluates
-#     # may need its own thread (a daemon thread?)
-#     def __init__(self,network,*args,**kwargs):
-#         self.network = network
-#         self.queue = queue.Queue()
-#         self.outputTable = {}
-#         super().__init__(*args,**kwargs)
-
-#     def run(self):
-#         while True:
-#             try: board = self.queue.get(timeout=1)
-#         values,moveProbs = self.network.infer(minibatch)
-#         # split values and moveProbs across the batch
-#         # filter out move probs below epsilon?
-#     def enqueue(self,board):
-#         self.outputTable[board] = None
-#         self.queue.put(board)
 
 class NNevalQueue(queue.Queue):
     # batched_nn_executor holds a queue
@@ -37,37 +17,45 @@ class NNevalQueue(queue.Queue):
     def __init__(self,network,batch_size=16):
         super().__init__()
         self.network = network
-        self.force_eval = False
         self.outputTable = {}
         self.batch_size = batch_size
         self.worker = threading.Thread(target=self.work)
         self.worker.daemon = True
         self.worker.start()
+        self.num_dispatches = 0
 
-    def enqueue(self,board,force_eval=False):
-        self.outputTable[board] = None
-        self.put(board)
-        self.force_eval=force_eval
+    def evaluate(self,board):
+	#TODO: Switch keys to a random integer to prevent board collision
+	# where multiple copies of the same board are submitted in the same
+	# minibatch. Ideally avoiding locks & synchronization
+        id = np.random.randint(2147483647)
+        self.outputTable[id] = None
+        self.put((id,board))
+        while self.outputTable[id] is None:
+            time.sleep(.0001)
+        return self.outputTable.pop(id)
 
     def work(self):
-        mb_boards = []
         while True:
-            if len(mb_boards)>=self.batch_size or (self.force_eval and len(mb_boards)):
+            if not self.empty():
+                mb_boards = []
+                ids = []
+                for i in range(self.batch_size):
+                    try: 
+                        id,board = self.get(False)
+                        mb_boards.append(board)
+                        ids.append(id)
+                    except queue.Empty: break
+                #print("queue dispatch with {} boards".format(len(mb_boards)))
                 encoded_mb = [self.network.encode(board) for board in mb_boards]
                 collated_mb = default_collate(encoded_mb)
                 values,logits = self.network(*collated_mb)
                 values = values.data.cpu().numpy()
                 moveProbs = F.softmax(logits,dim=1).data.cpu().numpy()
-                for board, val, moveProb in zip(mb_boards,values,moveProbs):
-                    self.outputTable[board] = (val,moveProb)
-                self.force_eval = False
-            else:
-                try:
-                    mb_boards.append(self.get(False))
-                    self.task_done()
-                except queue.Empty:
-                    pass
-            time.sleep(.0001)
+                for id, val, moveProb in zip(ids,values,moveProbs):
+                    self.outputTable[id] = (val,moveProb)
+                self.num_dispatches+=1
+            else: time.sleep(.0001)
             
                 
             
@@ -79,23 +67,22 @@ class SearchNode(object):
     def __init__(self, moveProbs):
         considered_mvs_mask = moveProbs > SearchNode.EPSILON
         self.mv_ids = np.arange(len(moveProbs))[considered_mvs_mask] # Move encodings
-        self.Ps = moveProbs[considered_mvs_mask] # Nonzero move probabilites
+        self.Ps = np.ones(len(self.mv_ids))/len(self.mv_ids)#moveProbs[considered_mvs_mask] # Nonzero move probabilites
         self.Ns = np.zeros(len(self.mv_ids)) # Edge visit counts
         self.Vs = np.zeros(len(self.mv_ids)) # Edge values
-        #self.Qs = np.zeros(len(self.mv_ids)) # Vs/Ns (the mean Q value)
+        self.Qs = np.zeros(len(self.mv_ids))-1 # Vs/Ns (the mean Q value)
         self.children = [None]*len(self.mv_ids)
 
     @staticmethod #@lru_cache
-    def newchild_and_value(board,transposition_table,eval_queue,force=False):
+    def newchild_and_value(board,transposition_table,eval_queue):
         # TODO: Check if board is in transposition table
         # if so return the cached results
         # output = transposition_table.get(board,None)
         # if output is None:
-        eval_queue.enqueue(board,force_eval=force)
-        while eval_queue.outputTable[board] is None:
-            time.sleep(.0001)
-        value_abs, moveProbs = eval_queue.outputTable.pop(board)
-        child = SearchNode(moveProbs)
+        if board.is_game_over():
+            return None, board.outcome()
+        value_abs, moveProbs = eval_queue.evaluate(board)
+        child = SearchNode(moveProbs) #TODO: Deal with terminal board state, checkmate, draw, etc
         color = board.turn*2 - 1 # -1 or 1
         value_rel = value_abs*color
         output = (child, value_rel)
@@ -113,17 +100,16 @@ class SearchNode(object):
         if child is None:
             self.children[i], value = self.newchild_and_value(board,table,eval_queue)
         else:
-            value = child.update_path(board,table)
+            value = child.update_path(board,table,eval_queue)
         self.Vs[i] += value
-        #self.Qs[i] = self.Vs[i]/self.Ns[i]
-        return -1*value
+        self.Qs[i] = self.Vs[i]/self.Ns[i]
+        return value
 
     def select(self):
         """ Returns the move index according to PUCT"""
         sqrtSumN = np.sqrt(np.sum(self.Ns))
         Us = self.Ps*sqrtSumN/(1+self.Ns)
-        Qs = self.Vs/(self.Ns+.1)
-        mv_index = np.argmax(Qs + SearchNode.C_PUCT*Us)
+        mv_index = np.argmax(self.Qs + SearchNode.C_PUCT*Us)
         return mv_index
 
 
@@ -136,30 +122,60 @@ class MCTSAgent(Agent):
         network.eval()
         self.eval_queue = NNevalQueue(network,batch_size=bs)
         self.searchTree,_ = SearchNode.newchild_and_value(
-                            self.board,self.trans_table,self.eval_queue,force=True)
+                            self.board,self.trans_table,self.eval_queue)
     def make_action(self,move):
         mvindex = np.where(self.searchTree.mv_ids==self.board.nn_encode_move(move))[0][0]
-        self.searchTree = self.searchTree.children[mvindex]
         super().make_action(move)
+        self.searchTree = self.searchTree.children[mvindex]
+        if self.searchTree is None:
+            self.searchTree,_ = SearchNode.newchild_and_value(
+                        self.board,self.trans_table,self.eval_queue)
 
     def run_simulation(self):
         simulation_board = copy.deepcopy(self.board)
         self.searchTree.update_path(simulation_board,self.trans_table,self.eval_queue)
         return 0
 
-    def compute_action(self):
-        start_time =time.time()
+    def run_k_simulations(self,k=100):
+        for i in range(k):
+            self.run_simulation()
+
+    def think(self,thinktime=1):
+        start_time = time.time()
         with futures.ThreadPoolExecutor(self.num_threads) as exc:
             active_simulations = {exc.submit(self.run_simulation) for i in range(self.num_threads)}
-            while time.time() - start_time < self.movetime:
+            while time.time() - start_time < thinktime:
                 done, not_done = futures.wait(active_simulations,
-                                              timeout=.2,return_when=futures.FIRST_COMPLETED)
+                                              timeout=.02,return_when=futures.FIRST_COMPLETED)
                 for future in done:
                     active_simulations.remove(future)
                     active_simulations.add(exc.submit(self.run_simulation))
             futures.wait(active_simulations)
-        mv_id = self.searchTree.mv_ids[np.argmax(self.searchTree.Ns)]
+
+    def compute_action(self):
+        start_time =time.time()
+        while time.time() - start_time < self.movetime:
+            self.run_simulation()
+        # with futures.ThreadPoolExecutor(self.num_threads) as exc:
+        #     active_simulations = {exc.submit(self.run_simulation) for i in range(self.num_threads)}
+        #     while time.time() - start_time < self.movetime:
+        #         done, not_done = futures.wait(active_simulations,
+        #                                       timeout=.02,return_when=futures.FIRST_COMPLETED)
+        #         for future in done:
+        #             active_simulations.remove(future)
+        #             active_simulations.add(exc.submit(self.run_simulation))
+        #     futures.wait(active_simulations)
+        #mv_id = self.searchTree.mv_ids[np.argmax(self.searchTree.Ns)]
+        #sqrtSumN = np.sqrt(np.sum(self.searchTree.Ns))
+        #Us = self.searchTree.Ps*sqrtSumN/(1+self.searchTree.Ns)
+        j=np.argmax(self.searchTree.Qs)
+        mv_id = self.searchTree.mv_ids[j]
         action = self.board.nn_decode_move(mv_id)
-        print(action)
-        print(np.sum(self.searchTree.Ns))
+        print("{} takes action {} with evals {}".format(['Black','White'][self.board.turn],action,self.searchTree.Ns[j]))
+        print("# of Nodes evaluated: {}".format(np.sum(self.searchTree.Ns)))
+        #j = np.argmax(self.searchTree.Ns)
+        print("Yielding score: {}".format(self.searchTree.Vs[j]/(self.searchTree.Ns[j]+.00001)))
+        print("Best scoring move was: _ with score {}".format(np.max(self.searchTree.Vs/(self.searchTree.Ns+.0001))))
         return action
+
+    def play_through_game()

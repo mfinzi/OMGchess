@@ -66,7 +66,7 @@ class SimpleValueHead(nn.Module):
             ConvBNrelu(in_channels,in_channels,kernel_size=1,coords=coords),
             Expression(lambda u:u.mean(-1).mean(-1)),
             nn.Linear(in_channels,1),
-            )#nn.Tanh())
+            nn.Tanh())
 
     def forward(self,x):
         return self.net(x)[:,0]
@@ -143,3 +143,23 @@ class ChessDensenet(ChessNetwork):
         self.value = SimpleValueHead(inplanes,coords=coords)#ValueHead(k,1024,coords=coords)#
         print("{}M Parameters".format(sum(p.numel() for p in self.net.parameters() if p.requires_grad)/10**6))
 
+
+
+class ChessDRN(ChessNetworkWopp):
+    def __init__(self,k=128,num_blocks=40,drop_rate=.3,coords=True):
+        m = num_blocks//2
+        p = drop_rate
+        super().__init__()
+        self.net = nn.Sequential( #Idea, remove intermediate grid artifacts via intermediate conv2d
+            conv2d(18*self.k+64*4,k,coords=coords),
+            *[ResBlock(  k,  k,dilation=1,coords=coords,drop_rate=p) for _ in range(m)],
+            ConvBNrelu(  k,  k,dilation=1,coords=coords),
+            *[ResBlock(  k,  k,dilation=2,coords=coords,drop_rate=p) for _ in range(m//2)],
+            ConvBNrelu(  k,  k,dilation=1,coords=coords),
+            *[ResBlock(  k,  k,dilation=4,coords=coords,drop_rate=p) for _ in range(m//4)],
+            ConvBNrelu(  k,  k,dilation=2,coords=coords),
+            ConvBNrelu(  k,  k,dilation=1,coords=coords),
+        )
+        self.policy = ChessPolicyHead(k,64,coords=coords)
+        self.value = SimpleValueHead(k,coords=coords)#ValueHead(k,1024,coords=coords)#
+        print("{}M Parameters".format(sum(p.numel() for p in self.net.parameters() if p.requires_grad)/10**6))

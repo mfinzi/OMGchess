@@ -7,19 +7,19 @@ from oil.tuning.configGenerator import uniform,logUniform,sample_config
 from oil.utils.utils import LoaderTo, cosLr, recursively_update
 from oil.tuning.study import train_trial
 from chess_dataset import ChessDataset,ChessDatasetWOpp
-from chess_network import ChessResnet,ChessDensenet
+from chess_network import ChessResnet,ChessDensenet,ChessDRN
 from torch.utils.data import DataLoader
 #import oil.augLayers as augLayers
 
 from gameTrainer2D import GameTrainer2D, baseGameTrainTrial
 
-logdir = os.path.expanduser('~/games/chess/runs/drop2')
+logdir = os.path.expanduser('~/games/chess/runs/no_coords')
 adam_config = {
     #'trainer_config':{'log_suffix':'adam/'},
     'optimizer':torch.optim.Adam,
     'opt_config':{'lr':2e-3},
     'num_epochs':8,
-    'network':ChessResnet,'net_config': {'coords':True,'num_blocks':20,'k':128,'drop_rate':.3},
+    'network':ChessResnet,'net_config': {'coords':False,'num_blocks':20,'k':128,'drop_rate':.2},
     #'network':ChessDensenet,'net_config': {'M':5,'N':20,'k':20,'drop_rate':0,'coords':True},
 }
 sgd_config = {
