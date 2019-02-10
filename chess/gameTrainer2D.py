@@ -71,7 +71,12 @@ def makeTrainer(config):
     train_small = ChessDataset(cfg['datadir']+cfg['dataset']+'_trainsmall.pkl')
     val = ChessDataset(cfg['datadir']+cfg['dataset']+'_val.pkl')
     device = torch.device('cuda')
-    fullCNN = cfg['network'](**cfg['net_config']).to(device)
+    torch.backends.cudnn.benchmark=True
+    num_gpus = torch.cuda.device_count()
+    print("Using {} gpus".format(num_gpus))
+    fullCNN = nn.DataParallel(cfg['network'](**cfg['net_config'])).to(device)
+    cfg['bs'] *= num_gpus
+    cfg['opt_config']['lr'] *=num_gpus
     dataloaders = {}
     dataloaders['train'] = DataLoader(trainset,batch_size=cfg['bs'],
                             shuffle=True,drop_last=True,pin_memory=True,num_workers=2)

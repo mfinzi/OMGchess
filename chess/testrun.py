@@ -13,13 +13,13 @@ from torch.utils.data import DataLoader
 
 from gameTrainer2D import GameTrainer2D, baseGameTrainTrial
 
-logdir = os.path.expanduser('~/games/chess/runs/no_coords')
+logdir = os.path.expanduser('~/OMGchess/chess/runs/gpu1')
 adam_config = {
     #'trainer_config':{'log_suffix':'adam/'},
     'optimizer':torch.optim.Adam,
     'opt_config':{'lr':2e-3},
     'num_epochs':8,
-    'network':ChessResnet,'net_config': {'coords':False,'num_blocks':20,'k':128,'drop_rate':.2},
+    'network':ChessResnet,'net_config': {'coords':True,'num_blocks':20,'k':128,'drop_rate':.2},
     #'network':ChessDensenet,'net_config': {'M':5,'N':20,'k':20,'drop_rate':0,'coords':True},
 }
 sgd_config = {
@@ -32,8 +32,8 @@ sgd_config = {
 
 def makeTrainer(config):
     cfg = {
-        'dataset': 'chess_3001k_0.2s',
-        'datadir': os.path.expanduser('~/games/chess/data/'),
+        'dataset': 'chess_3000k_0.1s',
+        'datadir': os.path.expanduser('~/OMGchess/chess/data/'),
         'bs': 128,
         'trainer_config':{'log_dir':logdir,'value_weight':2.5}
         }#'network':ChessResnet,'net_config': {'coords':True,'num_blocks':20,'k':128},
@@ -42,8 +42,13 @@ def makeTrainer(config):
     trainset = ChessDatasetWOpp(cfg['datadir']+cfg['dataset']+'_train_0.pkl')
     train_small = ChessDatasetWOpp(cfg['datadir']+cfg['dataset']+'_trainsmall.pkl')
     val = ChessDatasetWOpp(cfg['datadir']+cfg['dataset']+'_val.pkl')
-    device = torch.device('cuda')
+    device = torch.device('cuda:0')
+    #torch.backends.cudnn.benchmark=True
+    #num_gpus = torch.cuda.device_count()
+    #print("Using {} gpus".format(num_gpus))
     fullCNN = cfg['network'](**cfg['net_config']).to(device)
+    #cfg['bs'] *= num_gpus
+    #cfg['opt_config']['lr'] *=num_gpus #not for adam
     dataloaders = {}
     dataloaders['train'] = DataLoader(trainset,batch_size=cfg['bs'],
                             shuffle=True,drop_last=True,pin_memory=True,num_workers=2)
