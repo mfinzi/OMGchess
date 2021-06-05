@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 
 from gameTrainer2D import GameTrainer2D, baseGameTrainTrial
 
-logdir = os.path.expanduser('~/OMGchess/chess/runs/gpu1')
+logdir = os.path.expanduser('~/OMGchess/chess/runs/gpu1_again')
 adam_config = {
     #'trainer_config':{'log_suffix':'adam/'},
     'optimizer':torch.optim.Adam,
@@ -38,12 +38,12 @@ def makeTrainer(config):
         'trainer_config':{'log_dir':logdir,'value_weight':2.5}
         }#'network':ChessResnet,'net_config': {'coords':True,'num_blocks':20,'k':128},
     cfg = recursively_update(cfg,config)
-    lr_sched = cosLr()
+    lr_sched = cosLr(cfg['num_epochs'])
     trainset = ChessDatasetWOpp(cfg['datadir']+cfg['dataset']+'_train_0.pkl')
     train_small = ChessDatasetWOpp(cfg['datadir']+cfg['dataset']+'_trainsmall.pkl')
     val = ChessDatasetWOpp(cfg['datadir']+cfg['dataset']+'_val.pkl')
     device = torch.device('cuda:0')
-    #torch.backends.cudnn.benchmark=True
+    torch.backends.cudnn.benchmark=True
     #num_gpus = torch.cuda.device_count()
     #print("Using {} gpus".format(num_gpus))
     fullCNN = cfg['network'](**cfg['net_config']).to(device)
@@ -63,20 +63,21 @@ Trial(adam_config)
 #Trial(sgd_config)
 
 # Completed Improvements:
-# Coordinate convolutions in all layers (unknown)
+# Coordinate convolutions in all layers (+.3% acc, +17% time)
 # Feed legal moves as input to the network (major boost)
 # Use both start and end legal move encodings for input (small improvement?)
 # No Improvement: remove tanh on value network, train on cp value directly (weights too much on extreme states?)
 # Minor to no Improvement: Add opponent move encoding to input features (yields worse or similar accs?)
 # Dual encoding policy network (+.7% acc)
 # Encode partial move history into the input tensors (+x% acc)
-# Dropout p=0.3: +.5% acc
+# Dropout p=0.2: (+.5% acc)
 # Why does Adam work better?
 
 # TODO: Replace resnet backbone with a densenet  (in progress, helps but more so with value function)
 # TODO: Get SWA setup and working
 # TODO: Yarin Gal's multitask uncertainty loss for balancing policy & value
 # TODO: Add in a FiLM layer using (to_move,num_moves,castling rights features)
+# TODO: Temperature scaling on human data to encourage more diversity
 
 # TODO: Weight sharing with repeating layers (aka RNN) for planning (investigate CTC)
 # TODO: Add (flip board, swap white for black pieces and tomove, negate cp) data aug (only 1.6x data though?)
@@ -106,3 +107,5 @@ Trial(adam_config)
 # Try to predict elos of black and white players
 # Alternative approach with interactive agent
 # CPNS feature visualization
+
+# See how well static elo evaluation correlates with elo of trained net

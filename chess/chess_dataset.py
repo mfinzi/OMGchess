@@ -97,3 +97,6 @@ class ChessDatasetWOpp(ChessDataset):
         # board_tensor, illegal_move_list, value, class_index
         return torch.cat([fen2tensor(fen) for fen in fens],dim=0), legal_moves(fens[-1]),\
             legal_opponent_moves(fens[-1]), self.cp2value(score), move2class(move)
+
+
+# class ChessDatasetWin(ChessDatasetWOpp)

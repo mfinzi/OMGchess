@@ -178,4 +178,4 @@ class MCTSAgent(Agent):
         print("Best scoring move was: _ with score {}".format(np.max(self.searchTree.Vs/(self.searchTree.Ns+.0001))))
         return action
 
-    def play_through_game()
+    # def play_through_game()

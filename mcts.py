@@ -1,5 +1,5 @@
 import numpy as np
-from numba import jit,njit,int32,float32,jitclass,void,boolean
+from numba import jit,njit,int32,float32,void,boolean
 import time
 import math
 from math import sqrt

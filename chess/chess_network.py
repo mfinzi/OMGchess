@@ -153,7 +153,7 @@ class ChessDRN(ChessNetworkWopp):
         self.net = nn.Sequential( #Idea, remove intermediate grid artifacts via intermediate conv2d
             conv2d(18*self.k+64*4,k,coords=coords),
             *[ResBlock(  k,  k,dilation=1,coords=coords,drop_rate=p) for _ in range(m)],
-            ConvBNrelu(  k,  k,dilation=1,coords=coords),
+            ConvBNrelu(  k,  k,dilation=1,coords=coords), # Problem because of duplicated conv? harder to train?
             *[ResBlock(  k,  k,dilation=2,coords=coords,drop_rate=p) for _ in range(m//2)],
             ConvBNrelu(  k,  k,dilation=1,coords=coords),
             *[ResBlock(  k,  k,dilation=4,coords=coords,drop_rate=p) for _ in range(m//4)],

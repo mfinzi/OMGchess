@@ -90,6 +90,7 @@ class NNAgent(Agent):
         values,logits = self.network(*[inp.unsqueeze(0) for inp in inputs])
         chosen_classid = logits.max(1)[1].squeeze().cpu().numpy()
         move = self.board.nn_decode_move(chosen_classid)
+        print("Board value",values,chosen_classid)
         return move
 
     def __str__(self):
