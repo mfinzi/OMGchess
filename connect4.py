@@ -174,21 +174,30 @@ class Connect4BitBoard(object):
     def show(self):
         plt.imshow(self.data())
 
+text_bank = ["You are the reason they\n put instructions on shampoo",
+"A CSGO bot would give\n me a better challenge",
+"With moves like that I could\n beat you running on an arduino",
+"And I thought this was\n gonna be a tough game",
+"You think you've got\n what it takes?","Not bad for a Human",
+"How is this possible?",
+"Nooo! I cannot lose!!","RIP"]
 
 class Connect4Game(object):
-    def __init__(self,move_first=True,think_time=1):
+    def __init__(self,move_first=True,think_time=1,debug=True):
         self.engine = MCTS(Connect4BitBoard)
         self.think_time = think_time
         self.fig,self.ax = plt.subplots(1,1,figsize=(4,4))
         self.ax.grid(which='minor', color='k', linestyle='-', linewidth=2)
         self.ax.set_xticks(np.arange(-.5, 7, 1), minor=True);
         self.ax.set_yticks(np.arange(-.5, 6, 1), minor=True);
+        self.ax.set_xticks([])
+        self.ax.set_yticks([])
         self.ppt = self.ax.imshow(self.engine.gameBoard.data(),vmin=-1,vmax=1)
-        self.text_artist = self.ax.text(2,1,"",color='w')
+        self.text_artist = self.ax.text(3,-.8,"",color='k',fontsize=15,ha='center', va='bottom')
+        self.text_artist2 = self.ax.text(3,6,"",color='k' if debug else 'white',fontsize=15,ha='center', va='center')
         self.fig.canvas.mpl_connect('button_press_event', self.on_click)
         plt.show()
         if not move_first: self.engine_move_update()
-    
     def on_click(self,event):
         #plt.text(.5,.5,"arrg")
         if self.ax.in_axes(event):
@@ -208,8 +217,14 @@ class Connect4Game(object):
         time.sleep(.1)
         
     def engine_move_update(self):
+        pold =self.engine.searchTree.win_ratio()
         engine_move =self.engine.compute_move(self.think_time)
-        self.text_artist.set_text("{};{:1.2f}".format(self.engine.searchTree.num_visits,self.engine.searchTree.win_ratio()))
+        p =self.engine.searchTree.win_ratio()
+        #p/(pold+1e-6)
+        i = np.digitize(p/(pold+1e-2),[.7,.8,.9,1.0,1.1,1.2,1.3])
+        text = text_bank[i]
+        self.text_artist.set_text(f"{text}")#\n (N={self.engine.searchTree.num_visits},p={p:1.2f})
+        self.text_artist2.set_text(f"(p={p:1.2f},N={self.engine.searchTree.num_visits})")
         outcome = self.engine.make_move(engine_move)
         if outcome: self.show_victory(outcome)
         self.ppt.set_data(self.engine.gameBoard.data())
